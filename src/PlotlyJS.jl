@@ -27,9 +27,10 @@ end
 export plot, dataset, list_datasets, make_subplots, savefig, mgrid
 
 # globals for this package
-const _pkg_root = dirname(dirname(@__FILE__))
+const _pkg_root_fallback = dirname(dirname(@__FILE__))
+@inline _pkg_root() = something(pkgdir(PlotlyJS), _pkg_root_fallback)
 const _js_path = joinpath(artifact"plotly-artifacts", "plotly.min.js")
-const _js_version = include(joinpath(_pkg_root, "deps", "plotly_cdn_version.jl"))
+const _js_version = include(joinpath(_pkg_root(), "deps", "plotly_cdn_version.jl"))
 const _js_cdn_path = "https://cdn.plot.ly/plotly-$(_js_version).min.js"
 const _mathjax_cdn_path =
     "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_SVG"
@@ -47,7 +48,7 @@ make_subplots(;kwargs...) = plot(Layout(Subplots(;kwargs...)))
 @doc (@doc Subplots) make_subplots
 
 function docs()
-    schema_path = joinpath(dirname(dirname(@__FILE__)), "deps", "schema.html")
+    schema_path = joinpath(_pkg_root(), "deps", "schema.html")
     if !isfile(schema_path)
         msg = "schema docs not built. Run `Pkg.build(\"PlotlyJS\")` to generate"
         error(msg)
@@ -95,14 +96,14 @@ end
 
 
 function __init__()
-    _build_log = joinpath(_pkg_root, "deps", "build.log")
+    _build_log = joinpath(_pkg_root(), "deps", "build.log")
     if isfile(_build_log) && occursin("Warning:", read(_build_log, String))
         @warn("Warnings were generated during the last build of PlotlyJS:  please check the build log at $_build_log")
     end
 
     if !isfile(_js_path)
         @info("plotly.js javascript library not found -- downloading now")
-        include(joinpath(_pkg_root, "deps", "build.jl"))
+        include(joinpath(_pkg_root(), "deps", "build.jl"))
     end
     
     if ccall(:jl_generating_output, Cint, ()) != 1
