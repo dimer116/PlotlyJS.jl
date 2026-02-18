@@ -96,14 +96,25 @@ end
 
 
 function __init__()
-    _build_log = joinpath(_pkg_root(), "deps", "build.log")
-    if isfile(_build_log) && occursin("Warning:", read(_build_log, String))
-        @warn("Warnings were generated during the last build of PlotlyJS:  please check the build log at $_build_log")
+    pkg_root = pkgdir(PlotlyJS)
+    build_log = pkg_root === nothing ? nothing : joinpath(pkg_root, "deps", "build.log")
+    if build_log !== nothing
+        try
+            if isfile(build_log) && occursin("Warning:", read(build_log, String))
+                @warn("Warnings were generated during the last build of PlotlyJS: please check the build log at $build_log")
+            end
+        catch err
+            @debug "Skipping PlotlyJS build.log check" build_log exception = (err, catch_backtrace())
+        end
     end
 
     if !isfile(_js_path)
         @info("plotly.js javascript library not found -- downloading now")
-        include(joinpath(_pkg_root(), "deps", "build.jl"))
+        if pkg_root === nothing
+            @warn "plotly.js javascript library not found, and package source path is unavailable in this runtime; skipping build.jl."
+        else
+            include(joinpath(pkg_root, "deps", "build.jl"))
+        end
     end
     
     if ccall(:jl_generating_output, Cint, ()) != 1
