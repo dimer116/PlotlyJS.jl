@@ -37,6 +37,7 @@ const _mathjax_cdn_path =
 struct PlotlyJSDisplay <: AbstractDisplay end
 
 # include the rest of the core parts of the package
+include("bundled_assets.jl")
 include("display.jl")
 include("util.jl")
 include("kaleido.jl")
