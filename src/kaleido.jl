@@ -121,7 +121,20 @@ function savefig(
     return fn
 end
 
-_ensure_kaleido_running(; kwargs...) = !is_running() && restart(; plotlyjs=_js_path, kwargs...)
+function _ensure_kaleido_running(; kwargs...)
+    is_running() && return nothing
+    if haskey(kwargs, :plotlyjs)
+        restart(; kwargs...)
+    else
+        js_local_path = _plotly_js_local_path()
+        if js_local_path === nothing
+            restart(; kwargs...)
+        else
+            restart(; plotlyjs=js_local_path, kwargs...)
+        end
+    end
+    return nothing
+end
 
 const _KALEIDO_MIMES = Dict(
     "application/pdf" => "pdf",

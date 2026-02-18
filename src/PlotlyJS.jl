@@ -29,11 +29,79 @@ export plot, dataset, list_datasets, make_subplots, savefig, mgrid
 # globals for this package
 const _pkg_root_fallback = dirname(dirname(@__FILE__))
 @inline _pkg_root() = something(pkgdir(PlotlyJS), _pkg_root_fallback)
-const _js_path = joinpath(artifact"plotly-artifacts", "plotly.min.js")
 const _js_version = include(joinpath(_pkg_root(), "deps", "plotly_cdn_version.jl"))
 const _js_cdn_path = "https://cdn.plot.ly/plotly-$(_js_version).min.js"
 const _mathjax_cdn_path =
     "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_SVG"
+const _plotly_artifacts_dir_cache = Ref{Union{Nothing, String}}(nothing)
+
+function _is_readable_file(path::AbstractString)
+    try
+        isfile(path) || return false
+        open(path, "r") do io
+            nothing
+        end
+        return true
+    catch
+        return false
+    end
+end
+
+function _is_readable_dir(path::AbstractString)
+    try
+        isdir(path) || return false
+        readdir(path)
+        return true
+    catch
+        return false
+    end
+end
+
+function _plotly_artifacts_dir()
+    cached = _plotly_artifacts_dir_cache[]
+    if cached !== nothing && _is_readable_file(joinpath(cached, "plotly.min.js"))
+        return cached
+    end
+
+    try
+        dir = artifact"plotly-artifacts"
+        if _is_readable_file(joinpath(dir, "plotly.min.js"))
+            _plotly_artifacts_dir_cache[] = dir
+            return dir
+        end
+    catch
+    end
+
+    for depot in Base.DEPOT_PATH
+        artifacts_dir = joinpath(depot, "artifacts")
+        _is_readable_dir(artifacts_dir) || continue
+        for hash in readdir(artifacts_dir)
+            candidate = joinpath(artifacts_dir, hash)
+            if _is_readable_file(joinpath(candidate, "plotly.min.js"))
+                _plotly_artifacts_dir_cache[] = candidate
+                return candidate
+            end
+        end
+    end
+
+    return nothing
+end
+
+function _plotly_js_local_path()
+    dir = _plotly_artifacts_dir()
+    return dir === nothing ? nothing : joinpath(dir, "plotly.min.js")
+end
+
+_plotly_js_dependency() = something(_plotly_js_local_path(), _js_cdn_path)
+
+function _plotly_datasets_dir()
+    dir = _plotly_artifacts_dir()
+    if dir === nothing
+        return nothing
+    end
+    datasets = joinpath(dir, "datasets")
+    return _is_readable_dir(datasets) ? datasets : nothing
+end
 
 struct PlotlyJSDisplay <: AbstractDisplay end
 
@@ -70,14 +138,22 @@ end
 
 @inline get_renderer() = DEFAULT_RENDERER[]
 
-list_datasets() = readdir(joinpath(artifact"plotly-artifacts", "datasets"))
+function list_datasets()
+    datasets_dir = _plotly_datasets_dir()
+    datasets_dir === nothing &&
+        error("Unable to locate readable PlotlyJS datasets in the plotly-artifacts artifact.")
+    return readdir(datasets_dir)
+end
 function check_dataset_exists(name::String)
     ds = list_datasets()
     name_ext = Dict(name => strip(ext, '.') for (name, ext) in splitext.(ds))
     if !haskey(name_ext, name)
         error("Unknown dataset $name, known datasets are $(collect(keys(name_ext)))")
     end
-    ds_path = joinpath(artifact"plotly-artifacts", "datasets", "$(name).$(name_ext[name])")
+    datasets_dir = _plotly_datasets_dir()
+    datasets_dir === nothing &&
+        error("Unable to locate readable PlotlyJS datasets in the plotly-artifacts artifact.")
+    ds_path = joinpath(datasets_dir, "$(name).$(name_ext[name])")
     return ds_path
 end
 
@@ -108,18 +184,24 @@ function __init__()
         end
     end
 
-    if !isfile(_js_path)
+    js_local_path = _plotly_js_local_path()
+    if js_local_path === nothing
         @info("plotly.js javascript library not found -- downloading now")
         if pkg_root === nothing
             @warn "plotly.js javascript library not found, and package source path is unavailable in this runtime; skipping build.jl."
         else
             include(joinpath(pkg_root, "deps", "build.jl"))
+            js_local_path = _plotly_js_local_path()
         end
     end
     
     if ccall(:jl_generating_output, Cint, ()) != 1
         # ensure precompilation of packages depending on PlotlyJS finishes
-        PlotlyKaleido.start(plotlyjs=_js_path)
+        if js_local_path === nothing
+            PlotlyKaleido.start()
+        else
+            PlotlyKaleido.start(plotlyjs=js_local_path)
+        end
     end
 
     # set default renderer

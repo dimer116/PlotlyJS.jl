@@ -31,7 +31,7 @@ function SyncPlot(
 
     # setup scope
     deps = [
-        "Plotly" => _js_path,
+        "Plotly" => _plotly_js_dependency(),
         _plotly_webio_bundle_path()
     ]
     scope = Scope(imports=deps)
